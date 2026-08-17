@@ -1,0 +1,152 @@
+openapi: 3.0.3
+info:
+  title: xiaocai-stock-ai
+  description: |
+    A 股问答引擎 HTTP API。数据取证 + 分析策略 + 敢下判断。
+
+    - 数据来源: 新浪 / 东财 / Tushare 等公开市场数据
+    - 分析框架: 自研量化引擎(BIAS/60日位置/资金流/事件驱动 vs 资金脉冲)
+    - 输出纪律: 结论前置, 硬底线(出货结构不接/20cm 涨停不追/ST 警示)
+
+    仅供研究参考, 不构成投资建议。
+  version: 1.0.0
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: https://xiaocai.sque.site
+    description: 官方演示服务(限流: 每 IP 20次/天, 3次/分钟)
+  - url: http://localhost:8080
+    description: 本地自部署实例
+paths:
+  /health:
+    get:
+      summary: 健康检查
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  version: { type: string }
+                  model: { type: string }
+  /api/version:
+    get:
+      summary: 版本信息
+      responses:
+        '200': { description: OK }
+  /api/ask:
+    post:
+      summary: 通用问答(推荐入口, 自动路由)
+      description: |
+        自动识别问题类型, 走最合适的分析路径。适合大部分场景。
+
+        示例问法:
+        - 个股: "中际旭创能上吗" / "被套了怎么办"
+        - 板块: "光通信怎么样" / "半导体设备近期走势"
+        - 选股: "从半导体设备里选3只" / "结合今天热点选5只20元以内的"
+        - 选板块: "给我3个明天可以买的细分板块"
+        - 对比: "旭创和新易盛哪个强"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AskRequest'
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AskResponse' } } } }
+        '400': { description: 参数错误 }
+        '429': { description: 触发限流(仅演示服务) }
+        '500': { description: 引擎错误 }
+  /api/stock:
+    post:
+      summary: 个股研判(强制走快速通道)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskRequest' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AskResponse' } } } }
+  /api/sector:
+    post:
+      summary: 板块诊断
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskRequest' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AskResponse' } } } }
+  /api/ranking:
+    post:
+      summary: 选股排序
+      description: |
+        options 支持: count(想要几只, 默认 5) / price_max(股价上限, 单位元)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskRequest' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AskResponse' } } } }
+  /api/board_pick:
+    post:
+      summary: 选板块
+      description: options 支持 count(想要几个, 默认 3)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AskRequest' }
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/AskResponse' } } } }
+
+components:
+  schemas:
+    AskRequest:
+      type: object
+      required: [question]
+      properties:
+        question:
+          type: string
+          description: 用户问题
+          example: 中际旭创能上吗
+        context:
+          type: string
+          description: 可选上下文, 用于追问
+          default: ''
+        persona:
+          type: string
+          description: 人设 key, 默认 'default'
+          default: default
+        options:
+          type: object
+          description: 附加选项 {max_tokens, path_hint, count, price_max}
+          default: {}
+    AskResponse:
+      type: object
+      properties:
+        answer:
+          type: string
+          description: 分析结果(结论前置的自然语言)
+        path:
+          type: string
+          description: 引擎实际走的路径(stock/sector/ranking/board_pick/compare/agentic)
+          example: fast
+        meta:
+          type: object
+          properties:
+            tool_trace: { type: array, description: 数据采集轨迹 }
+            duration_s: { type: number, description: 用时(秒) }
+            engine_version: { type: string }
+            rounds: { type: integer }
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: 仅演示服务需要, 到 xiaocai.sque.site 注册领取

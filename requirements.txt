@@ -1,0 +1,19 @@
+# xiaocai-stock-ai 依赖清单
+
+# 核心引擎
+openai>=1.30                 # LLM 供应商适配(DeepSeek + OpenAI 兼容协议)
+tushare>=1.4                 # A股 EOD 数据(需 TUSHARE_TOKEN)
+requests>=2.31               # HTTP 调用(工具层)
+pandas>=2.0                  # tushare 依赖
+numpy>=1.24                  # 技术指标计算
+
+# HTTP 服务
+fastapi>=0.100
+uvicorn[standard]>=0.23
+pydantic>=2.0
+
+# MCP Server(可选, 不用 MCP 形态可注释)
+# mcp>=0.9
+
+# 缓存/日志
+diskcache>=5.6               # tushare 返回缓存
