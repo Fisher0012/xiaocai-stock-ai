@@ -1,0 +1,19 @@
+services:
+  xiaocai:
+    build: .
+    image: xiaocai-stock-ai:latest
+    container_name: xiaocai-stock-ai
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    env_file:
+      - .env
+    environment:
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    # 自部署默认不开演示限流; 官方部署 sque.site 时手动 export XIAOCAI_DEMO_MODE=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

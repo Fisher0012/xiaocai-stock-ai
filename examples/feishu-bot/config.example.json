@@ -1,0 +1,11 @@
+{
+  "_comment": "把本文件复制为 config.json 并填入真实值。config.json 不进 git。",
+  "APP_ID": "cli_xxx",
+  "APP_SECRET": "xxx",
+  "XIAOCAI_API_ENDPOINT": "https://xiaocai.sque.site/api/ask",
+  "XIAOCAI_API_KEY": "",
+  "_或者自部署": "把 XIAOCAI_API_ENDPOINT 改成你自己的 http://localhost:8080/api/ask",
+  "ACK_REPLY": "好的，马上分析",
+  "ERROR_REPLY": "分析出了点问题, 稍后重试~",
+  "DISCLAIMER": "\n\n---\n数据来自公开市场数据 | AI 生成, 仅供研究参考, 不构成投资建议"
+}
