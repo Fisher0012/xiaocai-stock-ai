@@ -18,7 +18,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from core.config import _load_dotenv_once, get_default_model
@@ -109,6 +109,17 @@ class HealthResponse(BaseModel):
 # ============================================================
 # 端点
 # ============================================================
+
+
+_WEB_INDEX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "index.html")
+
+
+@app.get("/", include_in_schema=False)
+def home():
+    """极简演示单页, 提问 → /api/ask → Markdown 渲染。"""
+    if os.path.exists(_WEB_INDEX):
+        return FileResponse(_WEB_INDEX, media_type="text/html; charset=utf-8")
+    return JSONResponse({"detail": "web/index.html 未找到"}, status_code=404)
 
 
 @app.get("/health", response_model=HealthResponse)

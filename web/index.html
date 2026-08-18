@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小财 · A 股问答演示 (开源)</title>
+<meta name="description" content="xiaocai-stock-ai 开源版演示: 用真数据说话, 敢下判断的 A 股问答引擎">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1a1a1a; background: #fafafa; line-height: 1.6; }
+.wrap { max-width: 720px; margin: 0 auto; padding: 32px 20px 80px; }
+
+header { text-align: center; padding: 24px 0 32px; }
+header h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+header h1 .brand { color: #d32f2f; }
+header .tag { font-size: 13px; color: #666; margin-top: 6px; }
+header .tag a { color: #666; border-bottom: 1px solid #ccc; text-decoration: none; padding-bottom: 1px; }
+header .tag a:hover { color: #1a1a1a; border-color: #1a1a1a; }
+
+.pitch { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; font-size: 14px; color: #444; }
+.pitch strong { color: #1a1a1a; }
+
+form { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+textarea { width: 100%; min-height: 84px; border: 1px solid #ddd; border-radius: 6px; padding: 12px 14px; font-family: inherit; font-size: 15px; resize: vertical; outline: none; }
+textarea:focus { border-color: #999; }
+.actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+button { background: #1a1a1a; color: #fff; border: none; padding: 10px 22px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: inherit; }
+button:hover { background: #000; }
+button:disabled { background: #bbb; cursor: not-allowed; }
+.hint { font-size: 12px; color: #999; }
+
+.examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.examples span { font-size: 12px; color: #999; padding: 4px 0; margin-right: 4px; }
+.examples button { background: #f3f3f3; color: #555; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: normal; }
+.examples button:hover { background: #e8e8e8; color: #1a1a1a; }
+
+#loading { display: none; text-align: center; padding: 40px 0; color: #666; font-size: 14px; }
+.spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid #eee; border-top-color: #1a1a1a; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle; margin-right: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#loading .step { font-size: 12px; color: #999; margin-top: 8px; }
+
+#result { display: none; background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 24px 28px; margin-bottom: 20px; }
+#result h1, #result h2, #result h3 { font-weight: 600; margin: 16px 0 8px; }
+#result h1 { font-size: 18px; } #result h2 { font-size: 16px; } #result h3 { font-size: 15px; }
+#result p { margin: 8px 0; }
+#result ul, #result ol { padding-left: 24px; margin: 8px 0; }
+#result li { margin: 4px 0; }
+#result strong { color: #1a1a1a; }
+#result code { background: #f5f5f5; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+#result .meta { margin-top: 20px; padding-top: 14px; border-top: 1px solid #f0f0f0; font-size: 11px; color: #999; }
+#result .disclaimer { margin-top: 12px; padding: 8px 12px; background: #fff8e1; border-left: 3px solid #ffca28; font-size: 12px; color: #666; border-radius: 3px; }
+
+#error { display: none; background: #fff; border: 1px solid #ffcdd2; border-left: 3px solid #d32f2f; border-radius: 6px; padding: 14px 18px; color: #c62828; font-size: 14px; margin-bottom: 20px; }
+
+footer { text-align: center; padding-top: 32px; color: #999; font-size: 12px; line-height: 1.8; }
+footer a { color: #666; text-decoration: none; border-bottom: 1px solid #ddd; padding-bottom: 1px; }
+footer a:hover { color: #1a1a1a; border-color: #1a1a1a; }
+footer .sep { margin: 0 8px; color: #ddd; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+<h1><span class="brand">小财</span> · A 股问答演示</h1>
+<div class="tag">
+开源 · Apache 2.0 · <a href="https://github.com/Fisher0012/xiaocai-stock-ai" target="_blank">GitHub</a>
+</div>
+</header>
+
+<div class="pitch">
+<strong>它不是通用 AI 猜的</strong>: 问一只票, 引擎会自动调 7 个数据工具拉当天的技术面 / 主力资金 / 估值 / 消息面, 再按 BIAS 分档 + 市值修正的策略给判断。<strong>不给"买入卖出目标价"</strong>, 只说"能上 / 别追 / 等回踩"。
+</div>
+
+<form id="ask-form">
+<textarea id="q" placeholder="试试: 中际旭创能上吗 / 光通信板块怎么样 / 跌了买什么避险" autofocus></textarea>
+<div class="actions">
+<button type="submit" id="submit-btn">开问</button>
+<span class="hint">通常 10-20 秒 · 演示服务 20 次/日/IP</span>
+</div>
+<div class="examples">
+<span>示例:</span>
+<button type="button" data-q="中际旭创能上吗">中际旭创能上吗</button>
+<button type="button" data-q="半导体板块怎么样">半导体板块怎么样</button>
+<button type="button" data-q="跌了买什么避险">跌了买什么避险</button>
+<button type="button" data-q="选3个热门板块">选3个热门板块</button>
+</div>
+</form>
+
+<div id="loading">
+<div><span class="spinner"></span>分析中...</div>
+<div class="step" id="step">拉技术面 / 资金流 / 估值 / 消息面数据</div>
+</div>
+
+<div id="error"></div>
+
+<div id="result">
+<div id="answer-body"></div>
+<div class="disclaimer">数据来自公开行情 · AI 生成, 仅供参考, 不构成投资建议, 据此操作风险自担</div>
+<div class="meta" id="meta"></div>
+</div>
+
+<footer>
+<a href="https://github.com/Fisher0012/xiaocai-stock-ai" target="_blank">⭐ Star on GitHub</a>
+<span class="sep">|</span>
+<a href="https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=276q038c-b6db-44c1-8eec-b1600458dc58" target="_blank">💬 加入飞书讨论群</a>
+<span class="sep">|</span>
+<a href="https://github.com/Fisher0012/xiaocai-stock-ai/tree/main/docs/tutorials" target="_blank">📖 6 种接入方式</a>
+<div style="margin-top: 12px;">这是演示服务, 深度使用请<a href="https://github.com/Fisher0012/xiaocai-stock-ai/blob/main/docs/tutorials/self-deploy.md" target="_blank">自己部署一份</a></div>
+</footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const form = $('ask-form'), q = $('q'), btn = $('submit-btn');
+const loading = $('loading'), step = $('step');
+const result = $('result'), answerBody = $('answer-body'), meta = $('meta');
+const errorBox = $('error');
+
+// 示例题一键填
+document.querySelectorAll('.examples button').forEach(b => {
+  b.addEventListener('click', () => { q.value = b.dataset.q; q.focus(); });
+});
+
+// 加载动效: 每 3s 换一句 step 提示
+const STEPS = [
+  '拉技术面 / 资金流 / 估值 / 消息面数据',
+  '按 BIAS 位置 + 市值修正做分档...',
+  '交叉判断走势 vs 消息催化持续性...',
+  '组织答案, 输出合规清洗...',
+];
+let stepTimer = null;
+function startLoading() {
+  let i = 0;
+  step.textContent = STEPS[0];
+  stepTimer = setInterval(() => {
+    i = (i + 1) % STEPS.length;
+    step.textContent = STEPS[i];
+  }, 3200);
+}
+function stopLoading() { clearInterval(stepTimer); stepTimer = null; }
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const question = q.value.trim();
+  if (!question) return;
+  btn.disabled = true; btn.textContent = '分析中...';
+  loading.style.display = 'block';
+  result.style.display = 'none';
+  errorBox.style.display = 'none';
+  startLoading();
+  const t0 = Date.now();
+  try {
+    const resp = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      throw new Error(data.detail || `HTTP ${resp.status}`);
+    }
+    answerBody.innerHTML = marked.parse(data.answer || '(空回复)');
+    const dur = ((Date.now() - t0) / 1000).toFixed(1);
+    const path = data.path || '?';
+    const tools = (data.meta && data.meta.tool_trace || []).length;
+    meta.textContent = `路径: ${path} · 调用 ${tools} 个数据工具 · 耗时 ${dur}s`;
+    result.style.display = 'block';
+  } catch (err) {
+    errorBox.textContent = '出错: ' + (err.message || err);
+    errorBox.style.display = 'block';
+  } finally {
+    stopLoading();
+    loading.style.display = 'none';
+    btn.disabled = false; btn.textContent = '开问';
+  }
+});
+</script>
+</body>
+</html>
