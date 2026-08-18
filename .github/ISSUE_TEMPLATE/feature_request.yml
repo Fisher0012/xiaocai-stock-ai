@@ -1,0 +1,41 @@
+name: ✨ Feature Request
+description: 提一个功能建议
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢建议! 提之前请先看看 [Discussions](../../discussions) 有没有类似讨论。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决什么问题?
+      description: 是什么场景遇到的?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 你希望怎么解决?
+      description: 具体的功能描述, 或者你觉得可行的方案
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 有考虑过其他方案吗?
+      description: 你评估过的其他做法(如果有)
+
+  - type: dropdown
+    id: contribution
+    attributes:
+      label: 你愿意提 PR 实现吗?
+      options:
+        - 我愿意
+        - 我可以帮忙测试, 但不写代码
+        - 只是提想法
+      default: 2

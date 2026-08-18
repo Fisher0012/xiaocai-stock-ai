@@ -1,0 +1,51 @@
+name: 🐛 Bug 报告
+description: 报告一个可复现的 bug
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈 bug。请尽量详细地描述以便定位。
+        **一般问题请去 [Discussions](../../discussions) 或飞书群, Issue 只处理明确的 bug。**
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 问题描述
+      description: 遇到了什么? 你期望的行为是什么?
+      placeholder: 我调用 /api/ask 时...
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 一步步告诉我们如何复现
+      placeholder: |
+        1. 部署方式(docker/裸机)
+        2. 请求参数
+        3. 报错内容或异常输出
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 环境信息
+      value: |
+        - OS:
+        - Python 版本:
+        - xiaocai-stock-ai 版本(git commit):
+        - LLM 供应商: DeepSeek / OpenAI 兼容
+        - 部署方式: Docker / 裸机 / MCP / CC Skill
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 报错栈或异常输出, 用代码块包起来
+      render: shell

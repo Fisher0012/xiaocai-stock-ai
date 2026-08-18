@@ -1,0 +1,31 @@
+name: 💬 使用问题
+description: 部署或使用中遇到的问题(非 bug)
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        👉 **快速答疑**: 加 [飞书群](../../blob/main/README.md#-一起玩) 更快得到回复。
+        👉 **完全新手**: 建议先看 [手把手教程](../../tree/main/docs/tutorials/)。
+
+  - type: textarea
+    id: question
+    attributes:
+      label: 你的问题
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: 你尝试过什么?
+      description: 已经试过哪些方法, 分别报了什么错
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 环境
+      value: |
+        - 部署方式:
+        - OS:

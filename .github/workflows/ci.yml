@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest ruff
+
+      - name: Lint (ruff)
+        run: |
+          ruff check core/ serve_http.py serve_mcp.py --select E,F,W --ignore E501,E402
+        continue-on-error: true
+
+      - name: Import smoke test
+        run: |
+          python -c "from core.engine import answer_fast, answer_sector, answer_board_pick, answer_ranking; print('all imports OK')"
+
+      - name: Run tests (if any)
+        run: |
+          if [ -d tests ] && [ -n "$(ls tests/*.py 2>/dev/null)" ]; then
+            pytest tests/ -v --tb=short
+          else
+            echo "No tests yet, skipping"
+          fi

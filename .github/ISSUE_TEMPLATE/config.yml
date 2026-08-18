@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 飞书讨论群
+    url: https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=276q038c-b6db-44c1-8eec-b1600458dc58
+    about: 使用问题、快速答疑、和其他用户交流, 走这里更快
+  - name: 📖 手把手教程
+    url: https://github.com/Fisher0012/xiaocai-stock-ai/tree/main/docs/tutorials
+    about: 6 种接入方式的详细教程, 部署遇到卡点先看这
