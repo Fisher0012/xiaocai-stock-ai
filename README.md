@@ -6,7 +6,7 @@
 
 **一套开源的 A 股问答引擎 · 用真数据说话 · 敢下判断**
 
-数据取证 + 分析策略 + 硬底线 · 让任何人 30 分钟搭出自己的股票分析机器人
+数据取证 + 消息面归因 + 分析策略 + 硬底线 · 让任何人 30 分钟搭出自己的股票分析机器人
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
@@ -41,19 +41,25 @@
 
 ## 它凭什么这么答
 
-三件事让它跟"再问一次通用 AI"不一样。
+四件事让它跟"再问一次通用 AI"不一样。
 
 **① 拿真数据不是从记忆里翻** — 数据来自新浪 / 东财 / Tushare 等公开市场接口, 盘中问就是当天当分钟的资金流、技术面、行情、公告, 不是"根据我的训练数据"。
 
-**② 分析框架是代码算好的, 不是模型即兴发挥** — BIAS20 是否在甜区、60 日位置多少、主力资金净流入几个亿、动态 PE vs TTM 反映业绩趋势——这些**判断标准是量化引擎的确定值**, 交给 LLM 只负责组织成话。所以换 LLM 供应商不影响判断质量。
+**② 消息面归因: 事件驱动 vs 纯资金脉冲** — 分析一个板块或个股上涨时, 引擎会自动检索近 3 天相关消息面, 判断这波是"业绩/政策/大单事件驱动"还是"纯资金抱团脉冲"——**前者持续性强, 后者追高就是接盘**。这个判断决定了操作建议的方向, 是别的 AI 给不了的。
 
-**③ 有硬底线** — 放量出货结构不接、20cm 涨停不追、ST 股必带警示。**严禁"买入/卖出/目标价"字眼**(合规底线)。
+**③ 分析框架是代码算好的, 不是模型即兴发挥** — BIAS20 是否在甜区、60 日位置多少、主力资金净流入几个亿、动态 PE vs TTM 反映业绩趋势——这些**判断标准是量化引擎的确定值**, 交给 LLM 只负责组织成话。所以换 LLM 供应商不影响判断质量。
+
+**④ 有硬底线** — 放量出货结构不接、20cm 涨停不追、ST 股必带警示。**严禁"买入/卖出/目标价"字眼**(合规底线)。
 
 <img src="docs/img/capabilities.png" alt="能力全景" width="720"/>
 
 ---
 
-## 30 秒试试 · 免部署
+## ⚡ 30 秒免部署试用
+
+在浏览器打开 [xiaocai.sque.site](https://xiaocai.sque.site), 输入 "中际旭创能上吗", 15 秒后你会看到一段完整分析。
+
+或者用命令行:
 
 ```bash
 curl -X POST https://xiaocai.sque.site/api/ask \
@@ -61,89 +67,26 @@ curl -X POST https://xiaocai.sque.site/api/ask \
   -d '{"question": "中际旭创能上吗"}'
 ```
 
-演示服务限流: 每 IP 每天 20 次、每分钟 3 次。生产用请自部署(见下)。
+**你会看到**: 返回一段带 BIAS、主力资金、操作建议、止损位的分析(约 500-1500 字)。
 
-## 5 分钟自部署
-
-```bash
-git clone https://github.com/Fisher0012/xiaocai-stock-ai
-cd xiaocai-stock-ai
-cp .env.example .env
-# 编辑 .env: 填 DEEPSEEK_API_KEY 和 TUSHARE_TOKEN
-docker-compose up -d
-curl http://localhost:8080/api/ask -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"question":"半导体设备板块怎么样"}'
-```
-
-必须的两个 key:
-- [DeepSeek API Key](https://platform.deepseek.com) — 或用 OpenAI 兼容协议(Kimi/通义/豆包 都行)
-- [Tushare Token](https://tushare.pro) — 免费注册
+演示服务限流: 每 IP 每天 20 次、每分钟 3 次。想深度用请看下方"接入方式"。
 
 ---
 
-## 三种接入形态
+## 📊 我该用哪种接入方式?
 
-### 1. HTTP API(推荐 · 所有平台通用)
+看你要在哪里用小财, 选一条路径:
 
-```python
-import requests
-r = requests.post("http://localhost:8080/api/ask",
-                  json={"question": "光通信板块怎么样"})
-print(r.json()["answer"])
-```
+| 我是这种用户 | 我该用 | 大概花多久 |
+|---|---|---|
+| 用 Claude Desktop / Cursor / Continue | **MCP Server** | 3 分钟改配置 → [手把手教程](docs/tutorials/mcp.md) |
+| 用 Claude Code | **CC Skill** | 30 秒 clone → [手把手教程](docs/tutorials/cc-skill.md) |
+| 想接进飞书群, 群友 @ 就能用 | **飞书 bot 模板** | 30 分钟 → [手把手教程](docs/tutorials/feishu-bot.md) |
+| 想接进 Coze / 扣子 / Kimi 智能体 | **HTTP API + OpenAPI** | 15 分钟 → [手把手教程](docs/tutorials/coze-kimi.md) |
+| 自己写 Python agent | **HTTP API** | 5 分钟 → [手把手教程](docs/tutorials/python-sdk.md) |
+| 想自己部署一整套服务 | **Docker** | 5 分钟 → [手把手教程](docs/tutorials/self-deploy.md) |
 
-完整 API 文档: [`docs/API.md`](docs/API.md) · OpenAPI: [`examples/openapi.yaml`](examples/openapi.yaml)
-
-### 2. MCP Server(Claude Desktop / Claude Code / Cursor / Continue)
-
-`~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "xiaocai-stock-ai": {
-      "command": "python3",
-      "args": ["/path/to/xiaocai-stock-ai/serve_mcp.py"],
-      "env": {
-        "DEEPSEEK_API_KEY": "sk-xxx",
-        "TUSHARE_TOKEN": "xxx"
-      }
-    }
-  }
-}
-```
-
-重启 Claude, 就能直接问 "帮我看看茅台"、"给我 3 个明天可以买的板块"。
-
-### 3. Claude Code Skill
-
-```bash
-git clone https://github.com/Fisher0012/xiaocai-stock-ai ~/.claude/skills/xiaocai-stock-ai
-cd ~/.claude/skills/xiaocai-stock-ai && pip install -r requirements.txt
-cp .env.example .env  # 编辑填 key
-# 重启 Claude Code, 直接问股票问题即可
-```
-
----
-
-## 接进你的平台
-
-### 飞书群机器人
-
-30 分钟接入, 群友 @机器人 就能用: [`examples/feishu-bot/`](examples/feishu-bot/)
-
-### Coze / 扣子
-
-作为自定义插件: [`examples/coze-plugin/`](examples/coze-plugin/)
-
-### Kimi 智能体
-
-作为函数调用工具: [`examples/kimi-agent/`](examples/kimi-agent/)
-
-### 微信机器人
-
-wxauto Windows 方案 + 公众号客服消息 API: [`examples/wechat-bot/`](examples/wechat-bot/)
+**每份教程都是手把手写的**: 每步都告诉你"应该看到什么"、"没看到该怎么办", 假设你不熟悉命令行也能跟着做。
 
 ---
 
@@ -155,27 +98,31 @@ xiaocai-stock-ai/
 ├── serve_http.py            HTTP API 服务
 ├── serve_mcp.py             MCP Server
 ├── skill/                   Claude Code Skill 包
-├── examples/                4 种接入示例
+├── examples/                4 种接入示例代码
 │   ├── feishu-bot/
 │   ├── coze-plugin/
 │   ├── kimi-agent/
 │   ├── wechat-bot/
 │   └── openapi.yaml
+├── docs/
+│   ├── tutorials/           手把手教程(6 份)
+│   ├── DEPLOY.md            生产部署方案
+│   └── img/                 截图与图卡
 ├── docker-compose.yml       一键起服务
-└── docs/                    部署/API/架构文档
+└── LICENSE                  Apache 2.0
 ```
 
 ---
 
-## 一起玩
+## 🤝 一起玩
 
-**飞书讨论群**(项目问题反馈 + 用户交流):
+**飞书讨论群** — 项目问题反馈 + 用户交流 + 每天真实群问答可看:
 
 <img src="docs/img/feishu-group-qr.png" alt="飞书群二维码" width="180"/>
 
-群链接: https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=276q038c-b6db-44c1-8eec-b1600458dc58
+**群链接**: https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=276q038c-b6db-44c1-8eec-b1600458dc58
 
-进群方式: 群名不可搜索, 只能通过二维码或链接进。
+群名不可搜索, 扫码或链接进。进群后 @小财 就能用同一套引擎问问题。
 
 ---
 
@@ -188,7 +135,7 @@ xiaocai-stock-ai/
 - ST 股 → 强制警示
 - 境外主题(英伟达业绩类) → 友好拒绝, 但概念股 A 股受益方向可以答
 
-**免责声明**: 本项目仅提供研究参考, 不构成投资建议。所有分析结论基于公开市场数据和量化模型, 数据源可能存在延迟或错误。投资决策与风险由使用者自行承担。
+**免责声明**: 本项目仅提供研究参考, **不构成投资建议**。所有分析结论基于公开市场数据和量化模型, 数据源可能存在延迟或错误。投资决策与风险由使用者自行承担。
 
 ---
 
@@ -200,7 +147,7 @@ xiaocai-stock-ai/
 
 ## 贡献
 
-欢迎 PR 和 Issue: [贡献指南](CONTRIBUTING.md) · [Issue 模板](.github/ISSUE_TEMPLATE)
+欢迎 PR 和 Issue: [Issue 模板](.github/ISSUE_TEMPLATE)
 
 ---
 
