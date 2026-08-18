@@ -12,6 +12,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutTimeout
 
+from .compliance import scrub_compliance
 from .data import market_regime, tools_rt, tools_ta
 from .persona import PERSONA_PROMPT, TOOL_DOCS
 
@@ -236,7 +237,7 @@ def answer(question: str, context: str = "") -> dict:
                     "把已采集到的数据整合成给群友的完整最终回答, 一次成稿: 不要说"
                     "'我再看/让我看/接下来查'这类过程话, 不要中途停顿, 直接给结论+数据+操作。"})
                 continue
-            return {"answer": content, "tool_trace": trace, "rounds": rnd}
+            return {"answer": scrub_compliance(content), "tool_trace": trace, "rounds": rnd}
         messages.append({"role": "assistant", "content": msg.content or "",
                          "tool_calls": [c.model_dump() for c in calls]})
         # 单轮多工具并行执行
@@ -395,7 +396,7 @@ def answer_sector(sector_name: str, question: str, context: str = "") -> dict:
         messages=[{"role": "system", "content": _build_system()},
                   {"role": "user", "content": user}])
     logger.info("[sector] %s picks=%s %.0fs", disp, codes, time.time() - t0)
-    return {"answer": (resp.choices[0].message.content or "").strip(),
+    return {"answer": scrub_compliance((resp.choices[0].message.content or "").strip()),
             "tool_trace": trace, "rounds": 1, "path": "sector"}
 
 
@@ -473,7 +474,7 @@ def answer_board_pick(question: str, count: int = 3, context: str = "") -> dict:
         messages=[{"role": "system", "content": _build_system()},
                   {"role": "user", "content": user}])
     logger.info("[board_pick] count=%d cand=%d %.0fs", count, len(rows), time.time() - t0)
-    return {"answer": (resp.choices[0].message.content or "").strip(),
+    return {"answer": scrub_compliance((resp.choices[0].message.content or "").strip()),
             "tool_trace": trace, "rounds": 1, "path": "board_pick"}
 
 
@@ -610,7 +611,7 @@ def answer_ranking(sector_name: str, question: str, count: int = 5, context: str
                                {"role": "user", "content": user}],
         temperature=0.4, max_tokens=1400, timeout=120)
     logger.info("[ranking] %s cand=%d want=%d %.0fs", disp, len(rows), count, time.time() - t0)
-    return {"answer": (resp.choices[0].message.content or "").strip(),
+    return {"answer": scrub_compliance((resp.choices[0].message.content or "").strip()),
             "tool_trace": trace, "rounds": 1, "path": "ranking"}
 
 
@@ -713,7 +714,7 @@ def answer_fast(question: str, context: str = "") -> dict:
     mf = bundle.get("get_realtime_moneyflow", {})
     nm = (mf.get("data", {}).get("today_realtime", {}) or {}).get("name", "") if mf.get("ok") else ""
     ans = _enforce_st_warning(ans, nm)   # ST 退市警示硬兜底
-    return {"answer": ans, "tool_trace": trace, "rounds": 1, "path": "fast"}
+    return {"answer": scrub_compliance(ans), "tool_trace": trace, "rounds": 1, "path": "fast"}
 
 
 if __name__ == "__main__":
