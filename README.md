@@ -120,7 +120,7 @@ xiaocai-stock-ai/
 
 <img src="docs/img/feishu-group-qr.png" alt="飞书群二维码" width="180"/>
 
-**群链接**: https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=276q038c-b6db-44c1-8eec-b1600458dc58
+**群链接**: https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=ed4vc1d6-24a8-4c30-b149-4d16882f54d2
 
 群名不可搜索, 扫码或链接进。进群后 @小财 就能用同一套引擎问问题。
 
