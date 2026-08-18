@@ -50,6 +50,17 @@ button:disabled { background: #bbb; cursor: not-allowed; }
 #result .meta { margin-top: 20px; padding-top: 14px; border-top: 1px solid #f0f0f0; font-size: 11px; color: #999; }
 #result .disclaimer { margin-top: 12px; padding: 8px 12px; background: #fff8e1; border-left: 3px solid #ffca28; font-size: 12px; color: #666; border-radius: 3px; }
 
+.follow-up { display: none; margin-top: 16px; padding: 14px 16px; background: #f8f8f8; border: 1px solid #eee; border-radius: 6px; }
+.follow-up .fu-label { font-size: 12px; color: #666; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+.follow-up .fu-label .reset-btn { background: transparent; color: #999; padding: 2px 8px; border: 1px solid #ddd; border-radius: 10px; font-size: 11px; }
+.follow-up .fu-label .reset-btn:hover { background: #fff; color: #666; border-color: #999; }
+.follow-up .fu-row { display: flex; gap: 8px; }
+.follow-up input { flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 8px 12px; font-family: inherit; font-size: 14px; outline: none; }
+.follow-up input:focus { border-color: #999; }
+.follow-up .fu-btn { background: #1a1a1a; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 13px; }
+.follow-up .fu-btn:hover { background: #000; }
+.follow-up .fu-btn:disabled { background: #bbb; }
+
 #error { display: none; background: #fff; border: 1px solid #ffcdd2; border-left: 3px solid #d32f2f; border-radius: 6px; padding: 14px 18px; color: #c62828; font-size: 14px; margin-bottom: 20px; }
 
 footer { text-align: center; padding-top: 32px; color: #999; font-size: 12px; line-height: 1.8; }
@@ -97,6 +108,16 @@ footer .sep { margin: 0 8px; color: #ddd; }
 <div id="result">
 <div id="answer-body"></div>
 <div class="disclaimer">数据来自公开行情 · AI 生成, 仅供参考, 不构成投资建议, 据此操作风险自担</div>
+<div class="follow-up" id="follow-up">
+<div class="fu-label">
+<span>💬 接着问 (15 分钟内, 小财记得刚才聊的)</span>
+<button type="button" class="reset-btn" id="reset-btn">重新开始</button>
+</div>
+<form id="fu-form" class="fu-row">
+<input type="text" id="fu-input" placeholder="例如: 那对比一下宁德时代 / 那止损放哪 / 明天开盘怎么走">
+<button type="submit" class="fu-btn" id="fu-btn">接着问</button>
+</form>
+</div>
 <div class="meta" id="meta"></div>
 </div>
 
@@ -118,6 +139,19 @@ const form = $('ask-form'), q = $('q'), btn = $('submit-btn');
 const loading = $('loading'), step = $('step');
 const result = $('result'), answerBody = $('answer-body'), meta = $('meta');
 const errorBox = $('error');
+const followUp = $('follow-up'), fuForm = $('fu-form'), fuInput = $('fu-input'), fuBtn = $('fu-btn'), resetBtn = $('reset-btn');
+
+// 会话上下文缓存 (追问用): [{q, a}], 只留最近一轮足够, 太多会撑爆 context
+let convo = [];
+const CONTEXT_MAX_CHARS = 800;
+
+function buildContext() {
+  if (!convo.length) return '';
+  const last = convo[convo.length - 1];
+  const q = (last.q || '').slice(0, 200);
+  const a = (last.a || '').slice(0, CONTEXT_MAX_CHARS - 200);
+  return `上一轮问答:\n用户问: ${q}\n小财答: ${a}`;
+}
 
 // 示例题一键填
 document.querySelectorAll('.examples button').forEach(b => {
@@ -142,40 +176,83 @@ function startLoading() {
 }
 function stopLoading() { clearInterval(stepTimer); stepTimer = null; }
 
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const question = q.value.trim();
-  if (!question) return;
-  btn.disabled = true; btn.textContent = '分析中...';
+async function askOnce(question, isFollowUp = false) {
+  const submitBtn = isFollowUp ? fuBtn : btn;
+  const submitLabel = isFollowUp ? '接着问' : '开问';
+  submitBtn.disabled = true; submitBtn.textContent = '分析中...';
   loading.style.display = 'block';
-  result.style.display = 'none';
+  if (!isFollowUp) { result.style.display = 'none'; }
   errorBox.style.display = 'none';
   startLoading();
   const t0 = Date.now();
   try {
+    const body = { question };
+    if (isFollowUp) body.context = buildContext();
     const resp = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify(body),
     });
     const data = await resp.json();
-    if (!resp.ok) {
-      throw new Error(data.detail || `HTTP ${resp.status}`);
+    if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+    const answer = data.answer || '(空回复)';
+    // 追问模式: 追加到答案下方, 加分隔线
+    if (isFollowUp) {
+      const sep = document.createElement('div');
+      sep.style.cssText = 'margin: 20px 0 12px; padding-top: 12px; border-top: 1px dashed #ddd; font-size: 12px; color: #999;';
+      sep.textContent = '↓ 追问: ' + question;
+      answerBody.appendChild(sep);
+      const ansDiv = document.createElement('div');
+      ansDiv.innerHTML = marked.parse(answer);
+      answerBody.appendChild(ansDiv);
+    } else {
+      answerBody.innerHTML = marked.parse(answer);
     }
-    answerBody.innerHTML = marked.parse(data.answer || '(空回复)');
+    convo.push({ q: question, a: answer });
+    // 只保留最近一轮以控制 context 长度
+    if (convo.length > 1) convo = convo.slice(-1);
+    followUp.style.display = 'block';
+    if (isFollowUp) { fuInput.value = ''; fuInput.focus(); }
     const dur = ((Date.now() - t0) / 1000).toFixed(1);
     const path = data.path || '?';
     const tools = (data.meta && data.meta.tool_trace || []).length;
-    meta.textContent = `路径: ${path} · 调用 ${tools} 个数据工具 · 耗时 ${dur}s`;
+    meta.textContent = `路径: ${path} · 调用 ${tools} 个数据工具 · 耗时 ${dur}s${isFollowUp ? ' (追问)' : ''}`;
     result.style.display = 'block';
+    // 滚到刚出的答案
+    if (isFollowUp) window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   } catch (err) {
     errorBox.textContent = '出错: ' + (err.message || err);
     errorBox.style.display = 'block';
   } finally {
     stopLoading();
     loading.style.display = 'none';
-    btn.disabled = false; btn.textContent = '开问';
+    submitBtn.disabled = false; submitBtn.textContent = submitLabel;
   }
+}
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const question = q.value.trim();
+  if (!question) return;
+  convo = [];  // 新会话
+  askOnce(question, false);
+});
+
+fuForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const question = fuInput.value.trim();
+  if (!question) return;
+  askOnce(question, true);
+});
+
+resetBtn.addEventListener('click', () => {
+  convo = [];
+  answerBody.innerHTML = '';
+  result.style.display = 'none';
+  followUp.style.display = 'none';
+  q.value = '';
+  q.focus();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 });
 </script>
 </body>

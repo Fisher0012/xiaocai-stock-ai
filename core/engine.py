@@ -440,33 +440,74 @@ def answer_board_pick(question: str, count: int = 3, context: str = "") -> dict:
     if not boards:
         return {"answer": "现在拿不到明确的板块资金数据, 换个问法或稍后再问。",
                 "tool_trace": [], "rounds": 1, "path": "board_pick"}
-    # 每个候选板块补 2-3 只领涨股, 供 LLM 具象化理由
+    # 每个候选板块拉 top 2 只成分股 (Donnie 2026-08-18: 板块推荐必须带具体标的可关注)
     rows, trace = [], []
+    board_stocks = {}  # board_name -> [(name, code), ...]
+    all_codes = []     # 全部去重后的 code, 后面统一并行拉深度数据
     for b in boards:
         bname = b["board"]
-        rr = tools_rt.get_sector_top_stocks(bname, top_n=3, sort_by="flow")
-        leaders = ""
-        if rr.get("ok") and rr["data"]["top_stocks"]:
-            leaders = "、".join(f"{s.get('name')}({s.get('pct_change')}%)"
-                                for s in rr["data"]["top_stocks"][:3] if s.get("name"))
+        rr = tools_rt.get_sector_top_stocks(bname, top_n=2, sort_by="flow")
         trace.append({"round": 1, "tool": "get_sector_top_stocks",
-                     "params": {"sector_name": bname}, "ok": bool(rr.get("ok"))})
+                     "params": {"sector_name": bname, "top_n": 2}, "ok": bool(rr.get("ok"))})
+        top2 = []
+        if rr.get("ok") and rr["data"]["top_stocks"]:
+            for s in rr["data"]["top_stocks"][:2]:
+                nm = s.get("name")
+                cd = s.get("stock_code") or s.get("code")  # 数据源返回 stock_code
+                if nm and cd:
+                    top2.append((nm, cd))
+                    if cd not in all_codes:
+                        all_codes.append(cd)
+        board_stocks[bname] = top2
+        leaders_display = "、".join(f"{n}" for n, _ in top2) or "-"
         rows.append({"板块": bname, "涨跌%": b.get("pct_change"),
                      "主力净流入亿": b.get("main_net_yi"),
-                     "主力净占比%": b.get("main_net_pct"), "领涨股": leaders})
+                     "主力净占比%": b.get("main_net_pct"),
+                     "候选股": leaders_display})
+    # 并行拉每只候选股的技术面+资金面(轻量2件, 板块推荐用不着完整个股 5 件套)
+    STOCK_MINI_BUNDLE = ("get_technical_analysis", "get_realtime_moneyflow")
+    pool = ThreadPoolExecutor(max_workers=min(12, max(1, len(all_codes) * len(STOCK_MINI_BUNDLE))))
+    jobs = {(c, t): pool.submit(_run_tool, t, {"stock_code": c})
+            for c in all_codes for t in STOCK_MINI_BUNDLE}
+    stock_cards = {}   # code -> markdown 卡片
+    for c in all_codes:
+        parts = []
+        for t in STOCK_MINI_BUNDLE:
+            try:
+                res = jobs[(c, t)].result(timeout=TOOL_TIMEOUT_S)
+            except Exception as e:
+                res = {"ok": False, "error": {"message": str(e)[:100]}}
+            trace.append({"round": 1, "tool": t, "params": {"stock_code": c}, "ok": bool(res.get("ok"))})
+            parts.append(f"[{t}] {_shrink(res)}")
+        stock_cards[c] = "\n".join(parts)
+    pool.shutdown(wait=False, cancel_futures=True)
+    # 组装 LLM 数据: 板块表 + 每板块的候选股详细数据
     data_text = "\n".join(json.dumps(r, ensure_ascii=False) for r in rows)
+    stock_detail_blocks = []
+    for bname, stks in board_stocks.items():
+        if not stks:
+            continue
+        block_lines = [f"### 【{bname}】板块候选股"]
+        for nm, cd in stks:
+            card = stock_cards.get(cd, "(无数据)")
+            block_lines.append(f"**{nm}({cd})**\n{card}")
+        stock_detail_blocks.append("\n".join(block_lines))
+    stock_detail = "\n\n".join(stock_detail_blocks) if stock_detail_blocks else "(候选股数据未拉到)"
+
     news_block = _sector_news("板块热点", "")
     user = (f"[群友提问]\n{question}\n\n"
             f"[今日细分板块资金流入榜(已排除电子/半导体/通信等父级大类, 候选 {len(rows)} 个)]\n{data_text}\n\n"
+            f"[候选股深度数据(技术面+主力资金, 已并行拉取)]\n{stock_detail}\n\n"
             + (f"[近期消息面]\n{news_block}\n\n" if news_block else "[近期消息面]\n无明确催化消息(纯资金/技术面行情, 持续性存疑)\n\n") +
             f"要求:\n"
             f"①**第一句必须直接给结论**——'我给你的 {count} 个板块是: X、Y、Z'(一行摆出), "
             f"严禁'X个板块都能看'这种没头没脑的开头(2026-08-17 事故)。\n"
-            f"②然后分块讲每个板块: 板块名(标注**东财板块**四字, 让群友知道来源: 东财板块与用户直觉分类可能有差异, "
-            f"归属以东财为准) + 主力净流入/占比 + 领涨股 + **一句归因**(消息催化 or 纯资金脉冲) "
-            f"+ 一句操作建议(明天怎么参与、有哪些坑)。\n"
-            f"③最后一句总结: 这 {count} 个里最优先看哪个、原因。\n"
-            f"忠实度: 结论必须来自[资金流入榜]提供的板块, 不许自己编未列出的板块。篇幅 400-600 字。")
+            f"②然后分块讲每个板块, 每块 3 部分: "
+            f"  a) 板块名(标注**东财板块**四字) + 主力净流入/占比 + **一句归因**(消息催化 or 纯资金脉冲) + 一句操作节奏\n"
+            f"  b) **【值得关注】格式点评 2 只候选股**——每只必须挂 BIAS20 位置/60日位置/主力资金 三个数据+一句'能上/等回踩/别追'的判断(用和单独问个股时完全一样的标准, 甜区低位主力流入=能看, 高位出货=别追)\n"
+            f"  c) 交叉股要点破: 若这只票主业不属该板块只是概念挂钩, 明说它今天走的是别的逻辑\n"
+            f"③最后一句总结: 这 {count} 个里最优先看哪个板块+哪只票、原因。\n"
+            f"忠实度: 板块必须来自[资金流入榜], 候选股必须来自[候选股深度数据], 都不许自己编。篇幅 500-800 字, 群聊场景信息密度优先。")
     if context:
         user = f"[会话上下文]\n{context}\n\n{user}"
     resp = client.chat.completions.create(
