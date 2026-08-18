@@ -126,7 +126,7 @@ pm2 save && pm2 startup
 - **报 `lark_oapi 无法导入`** → 单独跑 `pip install lark-oapi`(或 pip3)
 - **追问不用 @ 也能问?** → 15 分钟内直接 @小财 接着问就行, bot 记得上一轮
 - **想改 ACK 话术("好的，马上分析")** → 编辑 `config.json` 里的 `ACK_REPLY`
-- **想改人设(直男/温和/正式)** → 编辑 `~/xiaocai/core/persona.py`(先备份)
+- **想改人设(语气/口头禅/风格)** → 编辑 `~/xiaocai/core/persona.py`(先备份)
 
 </details>
 
