@@ -458,7 +458,7 @@ def answer_board_pick(question: str, count: int = 3, context: str = "") -> dict:
     news_block = _sector_news("板块热点", "")
     user = (f"[群友提问]\n{question}\n\n"
             f"[今日细分板块资金流入榜(已排除电子/半导体/通信等父级大类, 候选 {len(rows)} 个)]\n{data_text}\n\n"
-            + (f"[近期消息面]\n{news_block}\n\n" if news_block else "") +
+            + (f"[近期消息面]\n{news_block}\n\n" if news_block else "[近期消息面]\n无明确催化消息(纯资金/技术面行情, 持续性存疑)\n\n") +
             f"要求:\n"
             f"①**第一句必须直接给结论**——'我给你的 {count} 个板块是: X、Y、Z'(一行摆出), "
             f"严禁'X个板块都能看'这种没头没脑的开头(2026-08-17 事故)。\n"
