@@ -21,3 +21,7 @@ Issues = "https://github.com/Fisher0012/xiaocai-stock-ai/issues"
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
