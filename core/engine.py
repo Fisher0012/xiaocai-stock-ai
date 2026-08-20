@@ -74,6 +74,27 @@ def _run_tool(tool: str, params: dict) -> dict:
         return {"ok": False, "error": {"message": f"{tool} 失败: {str(e)[:150]}"}}
 
 
+# 板块新闻关键词族(2026-08-20 医药催化漏检事故): 行业催化新闻的标题往往不含板块名字面——
+# 医药的催化写的是"创新药获批/医保谈判/集采", 不是"医药"。字面检索必漏, 按族扩展。
+_NEWS_KW_FAMILY = {
+    "医药": ["创新药", "医保", "集采", "药监局", "疫苗", "CXO", "仿制药", "临床"],
+    "医疗": ["创新药", "医保", "药监局", "医疗器械"],
+    "半导体": ["芯片", "晶圆", "光刻", "国产替代", "台积电", "存储"],
+    "证券": ["券商", "两融", "成交额", "并购重组"],
+    "银行": ["降准", "降息", "LPR", "净息差"],
+    "房地产": ["楼市", "限购", "房贷", "城中村"],
+    "白酒": ["消费", "提价", "动销"],
+    "汽车": ["新能源车", "销量", "智驾", "出口"],
+    "军工": ["军贸", "国防", "订单"],
+    "人工智能": ["AI", "算力", "大模型", "英伟达"],
+    "算力": ["AI", "大模型", "英伟达", "数据中心"],
+    "光伏": ["装机", "组件", "硅料"],
+    "锂电池": ["锂电", "储能", "宁德", "碳酸锂"],
+    "黄金": ["金价", "美联储", "避险"],
+    "煤炭": ["煤价", "电煤", "焦煤"],
+}
+
+
 def _sector_news(topic: str, sector: str = "", days: int = 3, limit: int = 8) -> str:
     """板块/主题近期消息面(自采集新闻库). 2026-08-17: 事件驱动 vs 纯资金脉冲, 持续性差异巨大,
     板块/选股路径必须知道催化在不在。空返回空串(缺一角比编造好)。"""
@@ -86,6 +107,12 @@ def _sector_news(topic: str, sector: str = "", days: int = 3, limit: int = 8) ->
     kws = [k for k in (topic, sector) if k and len(k) >= 2]
     if not kws:
         return ""
+    # 关键词族扩展(2026-08-20 医药催化漏检事故: 药监局批准创新药/医保局新规/港股创新药暴涨
+    # 全在库里, 但标题不含"医药"字面, 字面检索全漏 → bot 断言"无消息催化")。
+    for fam_key, fam_words in _NEWS_KW_FAMILY.items():
+        if any(fam_key in k or k in fam_key for k in kws):
+            kws += [w for w in fam_words if w not in kws]
+    kws = kws[:10]  # 防 SQL 条件爆炸
     try:
         conn = sqlite3.connect(db)
         conn.row_factory = sqlite3.Row
@@ -416,7 +443,7 @@ def answer_sector(sector_name: str, question: str, context: str = "") -> dict:
             f"[题材/板块]\n{disp}\n\n"
             + board_anchor +
             f"[已对该板块内当日资金最强的 {len(codes)} 只跑了完整个股数据, 直接引用]\n{data_text}\n\n"
-            + (f"[近期消息面]\n{news_block}\n\n" if news_block else "[近期消息面]\n无明确催化消息(纯资金/技术面行情, 持续性存疑)\n\n")
+            + (f"[近期消息面]\n{news_block}\n\n" if news_block else "[近期消息面]\n(我的新闻库近3天没检索到与该板块直接相关的消息——**检索可能有遗漏, 不等于市场上没有消息**。板块若在大涨/大跌, 表述必须用'我没检索到明确消息面'并提示可能有未覆盖的催化, 严禁断言'没有消息/纯资金行情'。)\n\n")
             + _scope_note +
             "输出要求: ①开头一句该板块自身整体状态(以[板块整体]的实际涨跌数据为准, 严禁从几只成分股脑补板块整体)"
             "+**归因(技术/资金/消息哪个是主驱动)** "
@@ -539,7 +566,7 @@ def answer_board_pick(question: str, count: int = 3, context: str = "") -> dict:
     user = (f"[群友提问]\n{question}\n\n"
             f"[今日细分板块资金流入榜(已排除电子/半导体/通信等父级大类, 候选 {len(rows)} 个)]\n{data_text}\n\n"
             f"[候选股深度数据(技术面+主力资金, 已并行拉取)]\n{stock_detail}\n\n"
-            + (f"[近期消息面]\n{news_block}\n\n" if news_block else "[近期消息面]\n无明确催化消息(纯资金/技术面行情, 持续性存疑)\n\n") +
+            + (f"[近期消息面]\n{news_block}\n\n" if news_block else "[近期消息面]\n(我的新闻库近3天没检索到与该板块直接相关的消息——**检索可能有遗漏, 不等于市场上没有消息**。板块若在大涨/大跌, 表述必须用'我没检索到明确消息面'并提示可能有未覆盖的催化, 严禁断言'没有消息/纯资金行情'。)\n\n") +
             f"要求:\n"
             f"①**第一句必须直接给结论**——'我给你的 {count} 个板块是: X、Y、Z'(一行摆出), "
             f"严禁'X个板块都能看'这种没头没脑的开头(2026-08-17 事故)。\n"
@@ -698,7 +725,7 @@ def answer_ranking(sector_name: str, question: str, count: int = 5, context: str
     user = (f"[群友提问]\n{question}\n\n[候选来源]\n{disp}"
             + (f"\n[用户硬约束]\n{_constraint}" if _constraint else "") +
             f"\n\n[候选池 {len(rows)} 只的实时数据]\n{data_text}\n\n"
-            + (f"[近期消息面]\n{_news_block}\n\n" if _news_block else "[近期消息面]\n无明确催化消息(纯资金/技术面行情, 持续性存疑)\n\n") +
+            + (f"[近期消息面]\n{_news_block}\n\n" if _news_block else "[近期消息面]\n(我的新闻库近3天没检索到与该板块直接相关的消息——**检索可能有遗漏, 不等于市场上没有消息**。板块若在大涨/大跌, 表述必须用'我没检索到明确消息面'并提示可能有未覆盖的催化, 严禁断言'没有消息/纯资金行情'。)\n\n") +
             f"{_RANK_SORT_RULES}\n\n"
             f"输出: **第一句必须先复述筛选口径**(候选从哪来{'+价格约束' if price_max else ''}+要几只), "
             f"让群友知道'这N只'指的是什么——严禁上来就说'这3只'这种没头没尾的指代(2026-08-14 群友看不懂事故)。"
