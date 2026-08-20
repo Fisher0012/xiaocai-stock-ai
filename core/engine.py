@@ -227,6 +227,14 @@ def _build_system() -> str:
                         + (hs_line + "\n" if hs_line else "")
                         + (f"主力净流入板块前5: {hot}\n" if hot else "")
                         + (f"主力净流出板块前3: {out}" if out else ""))
+            # 法定节假日检测(2026-08-20 元规则审计): _session_state 只认周末, 国庆/春节的
+            # 工作日会被误判"交易中"。用行情时间戳这个数据侧真相校验: 盘中时段行情却不是今天的
+            # → 今天实际休市, 所有数据都是最近交易日的。
+            qt = d.get("quote_time") or ""
+            if "交易中" in session and qt and not qt.startswith(now.strftime("%Y-%m-%d")):
+                date_line += (f"\n【⚠️数据时间校验】行情时间戳为 {qt}, 不是今天——今天大概率是法定节假日/休市日"
+                              f"(日历判断失效)。所有行情/资金数据都是最近交易日的收盘状态, 严禁当作今天的实时行情;"
+                              f" 回答开头要交代'今天休市, 数据截至{qt[:10]}'。")
     except Exception:
         logger.warning("市场环境预取失败, 留给模型自行调用")
     return f"{PERSONA_PROMPT}\n\n{date_line}{ctx_line}\n\n{TOOL_DOCS}"
@@ -432,7 +440,31 @@ def answer_sector(sector_name: str, question: str, context: str = "") -> dict:
                       "params": {"board_names": disp}, "ok": bool(board_anchor)})
     except Exception:
         pass
+    if not board_anchor:
+        # 缺失也要显式标注(2026-08-20 元规则: 缺数据处不许让 LLM 脑补)——
+        # 没有板块整体数据时, 严禁从几只成分股推断"板块整体涨没涨"
+        board_anchor = ("[板块整体]\n(板块整体行情数据这次没拿到。严禁从下面几只成分股推断板块整体涨跌; "
+                        "若用户问的是板块整体表现, 直说'板块整体的数字我这边没拿到', 只谈个股层面。)\n\n")
     news_block = _sector_news(sector_name, disp)  # 2026-08-17 消息面注入(事件驱动 vs 资金脉冲判断)
+    if not news_block:
+        # 板块级新闻检索空 → 领涨股个股新闻兜底(2026-08-20 催化漏检事故后加固:
+        # 板块消息面原来只有关键词检索一条腿, 补上"成分股公告/新闻"第二条腿)
+        try:
+            _extra = []
+            for _c in codes[:2]:
+                _rn = _run_tool("get_stock_news", {"stock_code": _c, "days": 3})
+                _d = (_rn.get("data") or {}) if _rn.get("ok") else {}
+                for _it in ((_d.get("market_news") or []) + (_d.get("announcements") or []))[:3]:
+                    _t = _it.get("title") or ""
+                    if _t:
+                        _extra.append(f"- [{_it.get('date', '')}] {_t[:80]}")
+                trace.append({"round": 1, "tool": "get_stock_news",
+                              "params": {"stock_code": _c}, "ok": bool(_rn.get("ok"))})
+            if _extra:
+                news_block = ("板块级消息未检索到, 以下是板块内领涨股的近期公告/新闻(可作催化线索, "
+                              "判断属于个股事件还是板块级催化):\n" + "\n".join(_extra[:6]))
+        except Exception:
+            pass
     # 口径透明(医药事故): 用户口语板块名 ≠ 解析到的东财板块名时, 必须开头交代口径
     _scope_note = ""
     if sector_name and disp and sector_name.strip().rstrip("板块") not in disp:
