@@ -150,6 +150,10 @@ def _session_state(now: _dt.datetime) -> str:
     if now.weekday() >= 5:
         return "周末休市"
     hm = now.hour * 60 + now.minute
+    # 2026-08-20 医药事故: 9:15-9:30 竞价时段单列——此时段涨跌幅是竞价口径,
+    # 当日资金流尚未生成, 姿态与"未开盘快照定格"完全不同
+    if 555 <= hm < 570:
+        return "A股盘前竞价中(9:15起集合竞价, 9:30正式开盘)"
     if 570 <= hm <= 690:
         return "A股交易中(上午盘)"
     if 690 < hm < 780:
@@ -166,7 +170,13 @@ def _build_system() -> str:
     date_line = (f"# 当前时间\n{now.strftime('%Y-%m-%d %H:%M')} 周{week}, {session}。"
                  "所有'今天/现在'均以此为准, 严禁使用训练记忆里的日期和行情。")
     # 时段感知指引(2026-08-17 Donnie: 休市/盘后消息面对开盘影响很大, 分析姿态要区分)
-    if "休市" in session or "已收盘" in session or "未开盘" in session:
+    if "竞价" in session:
+        # 2026-08-20 医药事故: 用户在竞价时段看到"全线大高开", bot 拿昨日快照说"不是暴涨"
+        date_line += ("\n【时段姿态·竞价】现在是开盘前竞价: 今天的主力资金流/分时数据 9:30 开盘后才开始累计, "
+                      "现在**还没有今天的资金数据**; 各股/板块涨跌幅是竞价口径(高开低开预演), 可能与昨收快照混杂。"
+                      "用户此刻说'暴涨/大高开/集体高开', 指的是他看到的竞价表现——**严禁拿昨日收盘数据否定用户的竞价体感**; "
+                      "谈方向要基于竞价高开幅度+消息面, 并明说'竞价口径, 开盘后确认'。")
+    elif "休市" in session or "已收盘" in session or "未开盘" in session:
         date_line += ("\n【时段姿态】当前非盘中, 行情快照定格, 分析重点在**盘后消息面对下一交易日开盘的影响**: "
                       "有实质催化(政策/业绩/事件)→说明开盘方向偏向; 无消息→说清纯技术面判断到下个交易日可能失效。")
     # 预取市场环境注入(原始事实, 无档位判定; 失败则由模型自行调 get_market_context)
@@ -379,12 +389,37 @@ def answer_sector(sector_name: str, question: str, context: str = "") -> dict:
         per_stock.append(f"### {c}\n" + "\n".join(parts))
     pool.shutdown(wait=False, cancel_futures=True)
     data_text = "\n\n".join(per_stock)
+    # 板块整体行情锚(2026-08-20 医药事故: 之前 LLM 只有 4 只成分股数据, "板块整体涨没涨"
+    # 全靠脑补, 在竞价时段直接否定了用户看到的全线高开)。点查板块自身当日涨跌+资金。
+    board_anchor = ""
+    try:
+        _rk = tools_rt.get_sector_moneyflow_rank(board_names=disp)
+        _bs = (_rk.get("data") or {}).get("boards") or []
+        if _bs and _bs[0].get("pct_change") is not None:
+            _b = _bs[0]
+            _flow = f", 主力净流入 {_b['main_net_yi']:+.2f} 亿" if _b.get("main_net_yi") is not None \
+                    else "(主力资金流 9:30 开盘后才开始累计, 当前无数据)"
+            board_anchor = (f"[板块整体(东财「{_b['board']}」口径, 实时)]\n"
+                            f"当日涨跌 {_b['pct_change']:+.2f}%{_flow}\n\n")
+        trace.append({"round": 1, "tool": "get_sector_moneyflow_rank",
+                      "params": {"board_names": disp}, "ok": bool(board_anchor)})
+    except Exception:
+        pass
     news_block = _sector_news(sector_name, disp)  # 2026-08-17 消息面注入(事件驱动 vs 资金脉冲判断)
+    # 口径透明(医药事故): 用户口语板块名 ≠ 解析到的东财板块名时, 必须开头交代口径
+    _scope_note = ""
+    if sector_name and disp and sector_name.strip().rstrip("板块") not in disp:
+        _scope_note = (f"⚠️口径: 用户问的是「{sector_name}」, 我按东财「{disp}」板块口径分析——"
+                       f"第一句必须先交代这个口径(如'{sector_name}我按{disp}口径看'), "
+                       f"用户体感若与该口径数据不符, 主动提示可能是范围差异, 请他点名更具体的子板块。\n")
     user = (f"[群友提问]\n{question}\n\n"
             f"[题材/板块]\n{disp}\n\n"
+            + board_anchor +
             f"[已对该板块内当日资金最强的 {len(codes)} 只跑了完整个股数据, 直接引用]\n{data_text}\n\n"
-            + (f"[近期消息面]\n{news_block}\n\n" if news_block else "[近期消息面]\n无明确催化消息(纯资金/技术面行情, 持续性存疑)\n\n") +
-            "输出要求: ①开头一句该板块自身整体状态+**归因(技术/资金/消息哪个是主驱动)** "
+            + (f"[近期消息面]\n{news_block}\n\n" if news_block else "[近期消息面]\n无明确催化消息(纯资金/技术面行情, 持续性存疑)\n\n")
+            + _scope_note +
+            "输出要求: ①开头一句该板块自身整体状态(以[板块整体]的实际涨跌数据为准, 严禁从几只成分股脑补板块整体)"
+            "+**归因(技术/资金/消息哪个是主驱动)** "
             "(不是拿别的风口当主线) ②对每只用和单独问个股时完全一样的标准下结论(BIAS/60日位置/资金 → "
             "能上/等回踩/别碰), 结论必须与其数据一致, 重词纪律照旧; 交叉题材股要点破当日真实驱动 "
             "③最后点出最值得关注的1-2只并说明**下个交易日/近期催化是否还在**。"
@@ -438,8 +473,14 @@ def answer_board_pick(question: str, count: int = 3, context: str = "") -> dict:
             if len(boards) >= count * 3:
                 break
     if not boards:
-        return {"answer": "现在拿不到明确的板块资金数据, 换个问法或稍后再问。",
-                "tool_trace": [], "rounds": 1, "path": "board_pick"}
+        _now = _dt.datetime.now()
+        if _now.weekday() < 5 and (_now.hour * 60 + _now.minute) < 570:
+            _ans = ("现在还没开盘, 今天的板块资金流向要 9 点半开盘后才开始累计。"
+                    "开盘后再问我一次, 我按当天真实的资金流向给你挑板块。")
+        else:
+            _ans = ("我这边刚才没拉到板块资金数据(数据源偶尔抖动), 不是市场没热点。"
+                    "过一两分钟再问我一次就好。")
+        return {"answer": _ans, "tool_trace": [], "rounds": 1, "path": "board_pick"}
     # 每个候选板块拉 top 2 只成分股 (Donnie 2026-08-18: 板块推荐必须带具体标的可关注)
     rows, trace = [], []
     board_stocks = {}  # board_name -> [(name, code), ...]
@@ -581,11 +622,27 @@ def answer_ranking(sector_name: str, question: str, count: int = 5, context: str
         if not codes:
             rr = answer(question, context); rr["path"] = "agentic"; return rr
         cand, had_flow = [{"stock_code": c} for c in codes], False
-    else:  # 热点模式过滤后空(如20元内无候选): 如实告知而不是硬凑
-        return {"answer": f"按你的条件筛了一圈——今天资金净流入靠前的板块里, "
-                          f"{'股价' + str(price_max) + '元以内' if price_max else ''}够格的候选是空的, "
-                          f"我不硬凑。要么放宽价格, 要么等明天资金结构变了再看。",
-                "tool_trace": [], "rounds": 1, "path": "ranking"}
+    else:
+        # 热点模式候选为空。2026-08-20 "今天买什么"事故: 原文案"按你的条件筛了一圈…
+        # 够格的候选是空的"——用户根本没给条件, 内部黑话直接甩给用户, 且把数据未生成
+        # 说成了筛选结论。按空因分三种人话:
+        now = _dt.datetime.now()
+        hm = now.hour * 60 + now.minute
+        if now.weekday() < 5 and hm < 570:
+            # 盘前: 当日资金流 9:30 开盘后才开始累计, 资金榜必空
+            ans = ("现在还没开盘, 今天的板块资金流向要 9 点半开盘后才开始累计, "
+                   "我手里还没有今天的数据。开盘后(9:30 以后)再问我一次, "
+                   "我按当天真实的资金流向给你挑。")
+        elif price_max:
+            # 真筛空: 有资金榜但价格过滤后没了
+            ans = (f"今天资金流入靠前的板块里, 我没找到 {price_max} 元以内、"
+                   f"质地又过得去的票——低价和强势今天凑不到一起, 我不硬凑。"
+                   f"可以放宽价格上限再问我一次, 或者明天资金换了方向再看。")
+        else:
+            # 盘中/盘后资金榜意外为空: 数据源问题, 如实说
+            ans = ("我这边刚才没拉到板块资金数据(数据源偶尔抖动), "
+                   "不是市场没机会。过一两分钟再问我一次就好。")
+        return {"answer": ans, "tool_trace": [], "rounds": 1, "path": "ranking"}
     cand = cand[:15]
     codes = [c["stock_code"] for c in cand]
     pool = ThreadPoolExecutor(max_workers=min(12, len(codes) * (1 if had_flow else 2)))

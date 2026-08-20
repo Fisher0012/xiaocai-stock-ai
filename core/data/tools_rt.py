@@ -326,14 +326,18 @@ def _fetch_boards(board_type: str) -> list[dict]:
     )
     rows = []
     for d in ((j.get("data") or {}).get("diff") or []):
-        if isinstance(d.get("f62"), (int, float)):
-            rows.append({
-                "board": d.get("f14"),
-                "bk": str(d.get("f12", "")),   # 板块 BK 代码, 供 _sector_bk_code 模糊 fallback
-                "pct_change": _num(d.get("f3")),
-                "main_net_yi": _yi(d.get("f62")),
-                "main_net_pct": _num(d.get("f184")),
-            })
+        # 2026-08-20 医药事故: 盘前竞价时段 f62(主力净额)全为"-", 原来整行丢弃导致
+        # 板块清单为空 → 板块名模糊解析必挂。改为保留行(资金字段置 None), 名字解析
+        # 不依赖资金数据; 榜单排序侧自行过滤 None。
+        if not d.get("f14"):
+            continue
+        rows.append({
+            "board": d.get("f14"),
+            "bk": str(d.get("f12", "")),   # 板块 BK 代码, 供 _sector_bk_code 模糊 fallback
+            "pct_change": _num(d.get("f3")),
+            "main_net_yi": _yi(d.get("f62")) if isinstance(d.get("f62"), (int, float)) else None,
+            "main_net_pct": _num(d.get("f184")),
+        })
     return rows
 
 
@@ -365,13 +369,17 @@ def get_sector_moneyflow_rank(top_n: int = 10, board_type: str = "industry",
                 "note": "金额单位亿元, 当日盘中实时",
             }, "source": "eastmoney_realtime"}
         rows = _fetch_boards(board_type)
-        if not rows:
-            return _err("未获取到板块资金数据")
-        rows.sort(key=lambda r: r["main_net_yi"] or 0, reverse=True)
+        # 资金榜只用有资金数据的行(盘前竞价时段 f62 全空 → funded 为空, 如实返回空榜,
+        # 由引擎层给"盘前资金流未生成"的诚实文案, 不再混入 None 排序)
+        funded = [r for r in rows if r.get("main_net_yi") is not None]
+        if not funded:
+            return _err("板块资金数据尚未生成(盘前竞价时段主力资金流从 9:30 开盘后才开始累计)"
+                        if rows else "未获取到板块资金数据")
+        funded.sort(key=lambda r: r["main_net_yi"], reverse=True)
         return {"ok": True, "data": {
             "board_type": board_type,
-            "top_inflow": rows[:top_n],
-            "top_outflow": rows[-top_n:][::-1],
+            "top_inflow": funded[:top_n],
+            "top_outflow": funded[-top_n:][::-1],
             "note": "金额单位亿元, 当日盘中实时",
         }, "source": "eastmoney_realtime"}
     except Exception as e:
@@ -440,6 +448,12 @@ _SECTOR_ALIAS = {
     "气体": "工业气体", "气体概念": "工业气体", "封测": "集成电路封测",
     "封装": "先进封装", "存储": "存储芯片", "军品": "军工",
     "创新药械": "创新药", "AI应用": "人工智能",
+    # 2026-08-20 医药事故: 大类词 suggest 只回个股不回板块, fuzzy 又依赖网络,
+    # 高频大类词直接钉死到东财大类行业板块, 不走不稳定的两级解析
+    "医药": "医药生物", "医药股": "医药生物", "医疗": "医药生物",
+    "药": "医药生物", "大医药": "医药生物",
+    "券商": "证券", "保险股": "保险", "银行股": "银行",
+    "地产": "房地产", "白酒股": "白酒", "军工股": "军工",
 }
 _sector_code_cache: dict = {}
 
@@ -449,6 +463,10 @@ def _sector_bk_code(name: str):
     2026-08-17 Donnie: 加模糊匹配 —— 用户口语板块名(如"气体"→"工业气体")东财搜不到时,
     fallback 到全板块列表(_fetch_boards)按子串匹配, 返回最优候选。"""
     import urllib.parse as _up
+    name = (name or "").strip()
+    # 剥"板块"后缀("医药板块"→"医药"), 东财板块名没有以"板块"结尾的, 剥了才能命中 alias
+    if len(name) > 2 and name.endswith("板块"):
+        name = name[:-2]
     name = _SECTOR_ALIAS.get(name, name)
     if name in _sector_code_cache:
         return _sector_code_cache[name]
@@ -478,7 +496,10 @@ def _sector_bk_code(name: str):
                 best = hits[0]
         except Exception:
             pass
-    _sector_code_cache[name] = best
+    # 2026-08-20 医药事故: 解析失败不缓存(负缓存 bug)——suggest/清单接口一次网络抖动,
+    # None 被永久缓存, 该板块名直到进程重启都解析不出。只缓存成功结果。
+    if best:
+        _sector_code_cache[name] = best
     return best
 
 
